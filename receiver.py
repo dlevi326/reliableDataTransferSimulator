@@ -28,17 +28,19 @@ class Receiver(object):
         return check%mod
 
     def make_pkt(self,expectedSeqNum,ack,checksum):
-        print('MAKE PACKET')
-        newData = bytearray(expectedSeqNum)
-        for bit in ack:
-            print(bit)
-            newData.append(bit)
+        print('MAKE RCV PACKET')
+        newData = bytearray()
+        newData.append(expectedSeqNum)
+        newData.append(123)
         newData.append(checksum)
+
         return newData
 
     def receive(self):
 
+
         data = self.simulator.u_receive()
+        print('RECEIVE')
 
         self.expectedSeqNum = 0
         self.ACK_DATA = bytes(123)
@@ -50,6 +52,7 @@ class Receiver(object):
 
 
         sndpkt = self.make_pkt(self.seqNums[self.expectedSeqNum],self.ACK_DATA,self.getChecksum(data[self.indData:]))
+        print(sndpkt)
         self.simulator.u_send(sndpkt)
 
 
