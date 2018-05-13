@@ -8,10 +8,11 @@ import utils
 import sys
 import time
 import numpy as np
+import copy
 
 class Sender(object):
 
-    def __init__(self, inbound_port=50006, outbound_port=50005, timeout=1, debug_level=logging.INFO):
+    def __init__(self, inbound_port=50006, outbound_port=50005, timeout=.01, debug_level=logging.INFO):
         self.logger = utils.Logger(self.__class__.__name__, debug_level)
 
         self.inbound_port = inbound_port
@@ -45,9 +46,9 @@ class Sender(object):
 
     
     def handle_timeout(self,sndpckt,base,nextSeqNum):
-        print('(sender) HANDLE TIMEOUT')
+        #print('(sender) HANDLE TIMEOUT')
         for i in range(base,nextSeqNum):
-            print('(sender) RESENDING PACKET: '+str(i))
+            #print('(sender) RESENDING PACKET: '+str(i))
             self.simulator.u_send(sndpckt[i])
 
 
@@ -66,13 +67,13 @@ class Sender(object):
         check = data[2]
 
         if(seqNum!=nextSeqNum):
-            print('(sender) SEQNUM GOT: '+str(seqNum)+' EXPECTED: '+str(nextSeqNum))
+            #print('(sender) SEQNUM GOT: '+str(seqNum)+' EXPECTED: '+str(nextSeqNum))
             return True
         elif(ack!=123):
-            print('(sender) GOT NACK')
+            #print('(sender) GOT NACK')
             return True
         elif(self.getChecksum(data[0:2])!=check):
-            print('(sender) INCORRECT CHECKSUM')
+            #print('(sender) INCORRECT CHECKSUM')
             return True
         return False
 
@@ -100,6 +101,7 @@ class Sender(object):
         # -------- Segments data ----------
         self.mtu = 1000
         self.dataSegments = []
+        
 
         index = 0
         while(index<len(self.data)):
@@ -110,160 +112,89 @@ class Sender(object):
             index += self.mtu 
         # ---------------------------------
 
+        self.total = len(self.dataSegments)
         self.seqNums = [x for x in range(len(self.dataSegments))]
         self.sndpkt = []
         self.numComplete = 0
+        timeout=1
+        temp=0
+        totalSpot = 0
         while(self.nextSeqNum<len(self.dataSegments)):
             self.sndpkt.append(self.make_pkt(self.nextSeqNum%255,self.dataSegments[self.nextSeqNum],self.getChecksum(self.dataSegments[self.nextSeqNum])))
         
-            print('(sender) SEND PACKET: '+str(self.nextSeqNum))
+            print('(sender) SEND PACKET: '+str(self.nextSeqNum)+'/'+str(self.total))
             self.simulator.u_send(self.sndpkt[self.nextSeqNum])
 
-            print('(sender) WAITING FOR ACK')
+            #print('(sender) WAITING FOR ACK')
             flag = True
+            flag2=False
+            
             while(flag):
+
                 try:
+                    
                     response = self.simulator.u_receive()
-                    print('(sender) RECEIVED DATA')
-                    if(response[0]==self.nextSeqNum%255):
-                        print('(sender) NOT CORRUPT')
+                    flag2=False
+                    #print('(sender) RECEIVED DATA')
+                    if(len(response)==1):
+                        self.simulator.u_send(self.sndpkt[self.nextSeqNum])
+                    elif(response[0]==self.nextSeqNum%255):
+                        #print('(sender) NOT CORRUPT')
                         self.nextSeqNum+=1
+                        temp+=1
+                        totalSpot+=1
                         flag = False
                     else:
-                        print('(sender) CORRUPT')
+                        #print('(sender) CORRUPT')
                         self.simulator.u_send(self.sndpkt[self.nextSeqNum])
                 except socket.timeout:
-                    print('(sender) TIMEOUT. RESENDING')
-                    self.simulator.u_send(self.sndpkt[self.nextSeqNum])
-        print('(sender) DONE TRASMITTING')
-        num=0
-        while(num<10):
-            pkt = bytearray()
-            pkt.append(1)
-            pkt.append(1)
-            self.simulator.u_send(pkt)
-            num+=1
+                    #print('(sender) TIMEOUT. RESENDING')
+                    print('(sender) TIMEOUT')
+                    if(flag2):
+                        print('(sender) SENDING SEQ NUM: '+str(self.nextSeqNum))
+                        self.simulator.u_send(self.sndpkt[self.nextSeqNum])
+                        timeout+=1
+                        temp = copy.copy(self.nextSeqNum)
+                        self.nextSeqNum = copy.copy(len(self.dataSegments))
+                        flag = False
+                        
+                    else:   
+                        self.simulator.u_send(self.sndpkt[self.nextSeqNum])
+                        flag2=True
 
-        '''
-        while(self.nextSeqNum<len(self.dataSegments)):
-            #time.sleep(.5)
+        if(temp<len(self.dataSegments)):
 
-            while(self.nextSeqNum<self.base+self.window and self.nextSeqNum<len(self.dataSegments)):
+            bb = bytearray()
+            bb.append(1)
+            num=0
+            while(num<10):
+                self.simulator.u_send(bb)
+                num+=1
 
-                self.sndpkt.append(self.make_pkt(self.nextSeqNum,self.dataSegments[self.nextSeqNum],self.getChecksum(self.dataSegments[self.nextSeqNum])))
-                
-                print('(sender) SEND PACKET: '+str(self.nextSeqNum))
-                self.simulator.u_send(self.sndpkt[self.nextSeqNum])
-                
+            print('TEMP IS: '+str(temp))
+            b = bytearray()
+            for i in self.dataSegments[temp+1:]:
+                for a in i:
+                    #print('-'*60)
+                    #print(a)
+                    b.append(a)
+            self.simulator.sndr_socket.close()
+            self.simulator.rcvr_socket.close()
 
-                self.nextSeqNum+=1
-
-            while(self.base<self.nextSeqNum):
-                #time.sleep(.5)
-                print('(sender) WAITING FOR ACK')
-                try:
-                    response = self.simulator.u_receive()
-                    print('(sender) RECEIVED DATA')
-
-                    checksum = response[2]
-                    ackNum = response[0]
-                    ack = response[1]
-                    print('(sender) Received ack num: '+str(ackNum))
-                    if(not self.isCorrupt(response,self.base,self.checksum)):
-                        print('(sender) NOT CORRUPT')
-                        self.base+=1
-                    else:
-                        print('(sender) CORRUPT')
-                        self.handle_timeout(self.sndpkt,self.base,self.nextSeqNum)
-                except socket.timeout:
-                    print('(sender) DID NOT RECEIVE ACK, TIMEOUT')
-                    self.handle_timeout(self.sndpkt,self.base,self.nextSeqNum)
-        print('(sender) DONE TRANSMITTING')
-        flag = True
-        num=0
-        while(num<10):
-            pkt = bytearray()
-            pkt.append(1)
-            pkt.append(1)
-            self.simulator.u_send(pkt)
-            num+=1
-        '''
-
-                
-                
-
-
-        #self.sndpckt.append(self.make_pkt(self.seqNums[self.nextSeqNum],self.data,self.checksum))
-        #print(self.sndpckt)
-        #print(self.sndpckt[0][self.ackNum])
-
-        #while True:
-
-        #    if(self.nextSeqNum<self.base+self.window):
-        #        self.sndpckt.append(self.make_pkt(self.nextSeqNum,self.data,self.checksum))
-
-        '''
-        while True:
-            if(self.nextSeqNum<self.base+self.window):
-                # If seq num is inside window
-                self.sndpckt.append(self.make_pkt(self.seqNums[self.nextSeqNum],self.data,self.checksum))
-
-                if(self.base==self.nextSeqNum): # If pointer is caught up you can send
-                    try:
-                        self.simulator.u_send(self.data)
-                    except socket.timeout:
-                        self.handle_timeout(self.sndpckt,self.base,self.nextSeqNum)
-                else:
-                    self.simulator.u_send(self.data)
-                self.nextSeqNum+=1
-            else:
-                print('Error')
-                sys.exit()
-
-
-            response = None
-            while(not response):
-
-                response = self.simulator.u_receive()
-                print(response)
-                if(self.isCorrupt(response,self.nextSeqNum,self.checksum)):
-                    print('IT IS CORRUPT')
-            
-
-
-
-            
-
-            if(self.notCorrupt(response)):
-                self.base = self.getAckNum(response)
-                if(self.base==self.nextSeqNum):
-                    try:
-            
-
-
-
-            if(self.base!=self.nextSeqNum):
-                try:
-                    base = self.getAckNum(self.simulator.u_receive())+1
-                except socket.timeout:
-                    self.handle_timeout(self.sndpckt,self.base,self.nextSeqNum)
-            else:
-                base = self.getAckNum(self.simulator.u_receive())+1
-        '''
-            
+            s = Sender()
+            s.send(b)
+        else:
+            print('(sender) DONE TRASMITTING')
+            num=0
+            while(num<10):
+                pkt = bytearray()
+                pkt.append(1)
+                pkt.append(1)
+                self.simulator.u_send(pkt)
+                num+=1
         
 
-
-
-
-        
-        
-
-
-
-
-
-
+       
 
 
 

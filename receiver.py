@@ -10,7 +10,7 @@ import time
 
 class Receiver(object):
 
-    def __init__(self, inbound_port=50005, outbound_port=50006, timeout=1, debug_level=logging.INFO):
+    def __init__(self, inbound_port=50005, outbound_port=50006, timeout=3, debug_level=logging.INFO):
         self.logger = utils.Logger(self.__class__.__name__, debug_level)
 
         self.inbound_port = inbound_port
@@ -40,14 +40,16 @@ class Receiver(object):
     def hasSeqNum(self,data,num):
         if data==num:
             return True
-        print('(receiver) GOT DATA SEQ: '+str(data)+' EXPECTED: '+str(num))
+        #print('(receiver) GOT DATA SEQ: '+str(data)+' EXPECTED: '+str(num))
         return False
 
     def notCorrupt(self,data,checksum):
+        if(len(data)==1):
+            return True
         if data[1] == checksum:
             return True
         else:
-            print('(receiver) GOT DATA CHECK: '+str(data[1])+' EXPECTED: '+str(checksum))
+            #print('(receiver) GOT DATA CHECK: '+str(data[1])+' EXPECTED: '+str(checksum))
             return False
 
     def isfinished(self,data):
@@ -63,74 +65,48 @@ class Receiver(object):
         self.indCheck = 1 # Checksum
         self.ackNum = 0 # Ack number (seq num)
 
-        f = open('output.txt','w')
+
+        #f = open('output.txt','w')
 
         while(True):
             try:
                 data = self.simulator.u_receive()
-                print('(receiver) RECEIVED DATA')
+                #print('(receiver) RECEIVED DATA')
                 if len(data)==2:
-                    print('(receiver) FINISHED RECEIVING')
+                    #print('(receiver) FINISHED RECEIVING')
+                    self.simulator.sndr_socket.close()
+                    self.simulator.rcvr_socket.close()
                     break
+                if len(data)==1:
+                    self.simulator.sndr_socket.close()
+                    self.simulator.rcvr_socket.close()
+
+                    s = Receiver()
+                    s.receive()
             except socket.timeout:
+                #print('(receiver) TIMEOUT')
                 continue
 
             if(self.notCorrupt(data,self.getChecksum(data[3:])) and self.hasSeqNum(data[0],self.expectedSeqNum%255)):
                 sndpkt = self.make_pkt(self.expectedSeqNum%255,self.ACK_DATA,self.getChecksum(data[3:]))
-                print('(receiver) NOT CORRUPT, SENDING ACK: '+str(sndpkt[0]))
+                #print('(receiver) NOT CORRUPT, SENDING ACK: '+str(sndpkt[0]))
                 self.simulator.u_send(sndpkt)
-                print(data[3:])
-                f.write(data[3:])
+                #print(data[3:])
+                sys.stdout.write(data[3:])
+                #f.write(data[3:])
                 self.expectedSeqNum+=1
             elif(self.notCorrupt(data,self.getChecksum(data[3:]))):
                 if(data[0]<self.expectedSeqNum%255):
                     sndpkt = self.make_pkt(data[0],self.ACK_DATA,self.getChecksum(data[3:]))
-                    print('(receiver) PACKET ALREADY RECEIVED, SENDING ACK: '+str(sndpkt[0]))
+                    #print('(receiver) PACKET ALREADY RECEIVED, SENDING ACK: '+str(sndpkt[0]))
                     self.simulator.u_send(sndpkt)
-        f.close()
-
-
-
-        '''
-        while(True):
-            #time.sleep(.5)
-            try:
-                data = self.simulator.u_receive()
-                print('(receiver) RECEIVED DATA')
-                if len(data)==2:
-                    print('(receiver) FINISHED!!!!')
-                    break
-                #if(self.isfinished(data)):
-                #    break
-            except Exception as e:#socket.timeout:
-                print e
-                continue
-
-            
-
-            if(self.notCorrupt(data,self.getChecksum(data[3:])) and self.hasSeqNum(data[0],self.expectedSeqNum)):
-                
-                sndpkt = self.make_pkt(self.expectedSeqNum,self.ACK_DATA,self.getChecksum(data[3:]))
-                print('(receiver) NOT CORRUPT, SENDING ACK: '+str(sndpkt[0]))
-                self.simulator.u_send(sndpkt)
-                print(data[3:])
-                f.write(data[3:])
-                self.expectedSeqNum+=1
-            elif(self.notCorrupt(data,self.getChecksum(data[3:]))):
-                if(data[0]<self.expectedSeqNum):
-                    sndpkt = self.make_pkt(data[0],self.ACK_DATA,self.getChecksum(data[3:]))
-                    print('(receiver) PACKET ALREADY RECEIVED, SENDING ACK: '+str(sndpkt[0]))
-                    self.simulator.u_send(sndpkt)
-                #print(data[2:])
-                #self.expectedSeqNum+=1
             else:
-                print('(receiver) CORRUPT, SENDING NACK')
-                sndpkt = self.make_pkt(self.expectedSeqNum,0,self.getChecksum(data[3:]))
-                #self.simulator.u_send(sndpkt)
-            
-        print('(receiver) FINISHED RECEIVING')
-        '''
-        f.close()
+                #print('(receiver) SENDING NACK')
+                #print('DATA HAS CHECKSUM OF: '+str(data[1])+' BUT ACTUALLY HAS CHECKSUM OF: '+str(self.getChecksum(data[3:])))
+                b = bytearray()
+                b.append(1)
+                self.simulator.u_send(b)
+        
 
 
 
@@ -169,4 +145,7 @@ class BogoReceiver(Receiver):
 if __name__ == "__main__":
     # test out BogoReceiver
     rcvr = Receiver()
-    rcvr.receive()
+    try:
+        rcvr.receive()
+    except socket.error:
+        pass
