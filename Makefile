@@ -1,9 +1,9 @@
-INPUT ?= ./file_4bytes.txt
+INPUT ?= ./file_1MB.txt
 OUTPUT ?= ./output.txt
 
 
 test:
-	python receiver.py > $(OUTPUT) & time python sender.py < $(INPUT) &
+	python receiver.py & time python sender.py < $(INPUT) &
 diff:
 	diff $(INPUT) $(OUTPUT)
 kill:
